@@ -25,6 +25,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <image_transport/image_transport.h>
 #include <sensor_msgs/image_encodings.h>
+#include <std_msgs/Bool.h>
 #include <std_srvs/Empty.h>
 
 #include <opencv2/opencv.hpp>
@@ -229,6 +230,9 @@ class EnsensoNode: public Node {
 
 		/// Publisher for publishing live images.
 		image_transport::Publisher live;
+
+		/// Publisher for camera status.
+		ros::Publisher status;
 	} publishers;
 
 	/// Object for handling transportation of images.
@@ -239,6 +243,9 @@ class EnsensoNode: public Node {
 
 	/// Timer to trigger image publishing.
 	ros::Timer publish_images_timer;
+
+	/// Timer to trigger status publishing.
+	ros::Timer publish_status_timer;
 
 public:
 	EnsensoNode(asio::executor bg_work) : bg_work_{std::move(bg_work)}, image_transport{*this} {
@@ -320,6 +327,7 @@ protected:
 		publishers.cloud       = advertise<PointCloud>("cloud", 1, true);
 		publishers.image       = image_transport.advertise("image", 1, true);
 		publishers.live        = image_transport.advertise("live", 1, true);
+		publishers.status      = advertise<std_msgs::Bool>("connection_status", 1, true);
 
 		// load ensenso parameters file
 		std::string ensenso_param_file = getParam<std::string>("ensenso_param_file", "");
@@ -360,6 +368,12 @@ protected:
 			publish_images_timer = createTimer(ros::Rate(publish_images_rate), &EnsensoNode::publishImage, this);
 		}
 
+		// start status publishing timer
+		double publish_status_rate = getParam("publish_status_rate", 10);
+		if (publish_status_rate > 0) {
+			publish_status_timer = createTimer(ros::Rate(publish_status_rate), &EnsensoNode::publishStatus, this);
+		}
+
 		::sd_notify(false, "STATUS=listening");
 		::sd_notify(false, "READY=1");
 		DR_SUCCESS("Ensenso opened successfully.");
@@ -388,6 +402,13 @@ protected:
 
 		// Publish the image to the live stream.
 		publishers.live.publish(cv_image.toImageMsg());
+	}
+
+	void publishStatus(ros::TimerEvent const &) {
+		std_msgs::Bool status_message;
+		status_message.data = isCameraOpened(serial).value();
+
+		publishers.status.publish(status_message);
 	}
 
 	void saveData(PointCloud const & point_cloud, cv::Mat const & image) {
