@@ -406,7 +406,8 @@ protected:
 
 	void publishStatus(ros::TimerEvent const &) {
 		std_msgs::Bool status_message;
-		status_message.data = isCameraOpened(serial).value();
+		std::optional<bool> opened = isCameraOpened(serial);
+		status_message.data =  opened.has_value() ? opened.value() : false;
 
 		publishers.status.publish(status_message);
 	}
